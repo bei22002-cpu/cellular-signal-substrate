@@ -12,16 +12,41 @@ Single-file core: `cellular_signal_substrate.py` (Python + tkinter). No third-pa
   - macOS: `brew install python-tk` if `import tkinter` fails
   - Linux (Debian/Ubuntu): `sudo apt install python3-tk`
 
-## Quick setup
+## How to
+
+### 1. Download via the terminal
+
+**Option A — clone with git (recommended):**
 
 ```bash
 git clone https://github.com/bei22002-cpu/cellular-signal-substrate.git
 cd cellular-signal-substrate
+```
+
+**Option B — download ZIP (no git):**
+
+```bash
+# macOS / Linux
+curl -L -o cellular-signal-substrate.zip https://github.com/bei22002-cpu/cellular-signal-substrate/archive/refs/heads/master.zip
+unzip cellular-signal-substrate.zip
+cd cellular-signal-substrate-master
+```
+
+```powershell
+# Windows PowerShell
+Invoke-WebRequest -Uri "https://github.com/bei22002-cpu/cellular-signal-substrate/archive/refs/heads/master.zip" -OutFile cellular-signal-substrate.zip
+Expand-Archive .\cellular-signal-substrate.zip -DestinationPath .
+cd cellular-signal-substrate-master
+```
+
+### 2. Check Python
+
+```bash
 python --version
 python -c "import tkinter; print('tkinter OK')"
 ```
 
-## Run the interactive app
+### 3. Run the interactive app
 
 ```bash
 python cellular_signal_substrate.py
