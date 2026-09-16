@@ -1,0 +1,153 @@
+# Phase 9 validation suite output (compact FAST grid)
+Grid: 14x14, task_steps=300
+
+## Baseline task suite (Phase 9 full, FAST)
+| task | seq_acc | episodes | rolling | scen_div | pred_acc | pred_inf | wm_err | instab | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MOVING_TARGET | 0.71 | 7 | 0.71 | 0.000 | 0.321 | 47.731 | 1.864 | 0.000 |  |  |  |
+| OBSTACLE_NAV | 1.00 | 7 | 1.00 | 0.283 | 0.319 | 48.062 | 1.863 | 0.045 |  |  |  |
+| CONTEXT_SWITCH | 1.00 | 7 | 1.00 | 0.000 | 0.320 | 49.323 | 1.864 | 0.001 |  |  |  |
+| A_THEN_B | 1.00 | 7 | 1.00 | 0.000 | 0.381 | 48.929 | 1.863 | 0.011 |  |  |  |
+| B_THEN_A | 1.00 | 7 | 1.00 | 0.000 | 0.381 | 48.930 | 1.863 | 0.011 |  |  |  |
+| EXPLORE_EXPLOIT | 0.86 | 7 | 0.86 | 0.000 | 0.320 | 49.612 | 1.864 | 0.000 |  |  |  |
+| DELAYED_TRAP | 1.00 | 7 | 1.00 | 0.000 | 0.387 | 49.807 | 1.863 | 0.013 |  | 1.808 | 1.934 |
+| REGIME_SHIFT | 1.00 | 7 | 1.00 | 0.000 | 0.382 | 48.934 | 1.863 | 0.011 | 6 | 1.808 | 2.093 |
+
+## Scenario counterfactual (FAST, MODE_INPUT_A)
+| scenario_divergence_mean | max_cell|a-b| | prediction_accuracy_score | world_model_error_ema |
+| --- | --- | --- | --- |
+| 0.000000 | 0.000000 | 0.864141 | 1.843407 |
+
+## Scenario counterfactual (default 50x50, MODE_INPUT_A, 80 steps)
+| scenario_divergence_mean | max_cell|a-b| | prediction_accuracy_score | world_model_error_ema |
+| --- | --- | --- | --- |
+| 0.086233 | 11.414458 | 0.858991 | 1.602508 |
+
+## Ablations (delta vs full on same FAST grid)
+
+### MOVING_TARGET
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 0.71 | 0.71 | 0.000 | 0.321 | 1.864 | 0.00 |  |  |  |
+| no_scenario_pref | 0.71 | 0.71 | 0.000 | 0.327 | 1.864 | 0.00 |  |  |  |
+| no_scenario_excitation | 0.71 | 0.71 | 0.000 | 0.321 | 1.864 | 0.00 |  |  |  |
+| equal_scenario_bias | 0.71 | 0.71 | 0.000 | 0.321 | 1.864 | 0.00 |  |  |  |
+| no_prediction_bias | 0.71 | 0.71 | 0.000 | 0.327 | 1.864 | 0.00 |  |  |  |
+| no_prediction_tracking | 0.71 | 0.71 | 0.000 | 0.296 | 1.864 | 0.00 |  |  |  |
+| no_world_update | 0.71 | 0.71 | 0.000 | 0.321 | 1.995 | 0.00 |  |  |  |
+| no_goal_meta | 0.71 | 0.71 | 2.904 | 0.385 | 1.864 | 0.00 |  |  |  |
+| freeze_adapt_path | 0.71 | 0.71 | 0.000 | 0.321 | 1.864 | 0.00 |  |  |  |
+
+### OBSTACLE_NAV
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 1.00 | 1.00 | 0.283 | 0.319 | 1.863 | 0.00 |  |  |  |
+| no_scenario_pref | 1.00 | 1.00 | 0.281 | 0.327 | 1.863 | 0.00 |  |  |  |
+| no_scenario_excitation | 1.00 | 1.00 | 0.000 | 0.319 | 1.863 | 0.00 |  |  |  |
+| equal_scenario_bias | 1.00 | 1.00 | 0.000 | 0.319 | 1.863 | 0.00 |  |  |  |
+| no_prediction_bias | 1.00 | 1.00 | 0.395 | 0.317 | 1.863 | 0.00 |  |  |  |
+| no_prediction_tracking | 1.00 | 1.00 | 0.966 | 0.359 | 1.863 | 0.00 |  |  |  |
+| no_world_update | 1.00 | 1.00 | 0.283 | 0.319 | 1.995 | 0.00 |  |  |  |
+| no_goal_meta | 1.00 | 1.00 | 5.050 | 0.382 | 1.863 | 0.00 |  |  |  |
+| freeze_adapt_path | 1.00 | 1.00 | 0.293 | 0.320 | 1.863 | 0.00 |  |  |  |
+
+### CONTEXT_SWITCH
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 1.00 | 1.00 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+| no_scenario_pref | 1.00 | 1.00 | 0.000 | 0.323 | 1.864 | 0.00 |  |  |  |
+| no_scenario_excitation | 1.00 | 1.00 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+| equal_scenario_bias | 1.00 | 1.00 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+| no_prediction_bias | 1.00 | 1.00 | 0.000 | 0.316 | 1.864 | 0.00 |  |  |  |
+| no_prediction_tracking | 1.00 | 1.00 | 0.000 | 0.294 | 1.864 | 0.00 |  |  |  |
+| no_world_update | 1.00 | 1.00 | 0.000 | 0.320 | 1.995 | 0.00 |  |  |  |
+| no_goal_meta | 1.00 | 1.00 | 5.497 | 0.379 | 1.864 | 0.00 |  |  |  |
+| freeze_adapt_path | 1.00 | 1.00 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+
+### A_THEN_B
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  |  |  |
+| no_scenario_pref | 1.00 | 1.00 | 0.000 | 0.394 | 1.863 | 0.00 |  |  |  |
+| no_scenario_excitation | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  |  |  |
+| equal_scenario_bias | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  |  |  |
+| no_prediction_bias | 1.00 | 1.00 | 0.002 | 0.378 | 1.863 | 0.00 |  |  |  |
+| no_prediction_tracking | 1.00 | 1.00 | 0.033 | 0.286 | 1.863 | 0.00 |  |  |  |
+| no_world_update | 1.00 | 1.00 | 0.000 | 0.381 | 1.995 | 0.00 |  |  |  |
+| no_goal_meta | 1.00 | 1.00 | 5.540 | 0.450 | 1.863 | 0.00 |  |  |  |
+| freeze_adapt_path | 1.00 | 1.00 | 0.000 | 0.382 | 1.863 | 0.00 |  |  |  |
+
+### B_THEN_A
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  |  |  |
+| no_scenario_pref | 1.00 | 1.00 | 0.000 | 0.394 | 1.863 | 0.00 |  |  |  |
+| no_scenario_excitation | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  |  |  |
+| equal_scenario_bias | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  |  |  |
+| no_prediction_bias | 1.00 | 1.00 | 0.002 | 0.378 | 1.863 | 0.00 |  |  |  |
+| no_prediction_tracking | 1.00 | 1.00 | 0.032 | 0.286 | 1.863 | 0.00 |  |  |  |
+| no_world_update | 1.00 | 1.00 | 0.000 | 0.381 | 1.995 | 0.00 |  |  |  |
+| no_goal_meta | 1.00 | 1.00 | 5.540 | 0.450 | 1.863 | 0.00 |  |  |  |
+| freeze_adapt_path | 1.00 | 1.00 | 0.000 | 0.382 | 1.863 | 0.00 |  |  |  |
+
+### EXPLORE_EXPLOIT
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 0.86 | 0.86 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+| no_scenario_pref | 0.86 | 0.86 | 0.000 | 0.324 | 1.864 | 0.00 |  |  |  |
+| no_scenario_excitation | 0.86 | 0.86 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+| equal_scenario_bias | 0.86 | 0.86 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+| no_prediction_bias | 0.86 | 0.86 | 0.000 | 0.316 | 1.864 | 0.00 |  |  |  |
+| no_prediction_tracking | 0.86 | 0.86 | 0.000 | 0.293 | 1.864 | 0.00 |  |  |  |
+| no_world_update | 0.86 | 0.86 | 0.000 | 0.320 | 1.995 | 0.00 |  |  |  |
+| no_goal_meta | 1.00 | 1.00 | 4.525 | 0.381 | 1.864 | 0.14 |  |  |  |
+| freeze_adapt_path | 0.86 | 0.86 | 0.000 | 0.320 | 1.864 | 0.00 |  |  |  |
+
+### DELAYED_TRAP
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 1.00 | 1.00 | 0.000 | 0.387 | 1.863 | 0.00 |  | 1.808 | 1.934 |
+| no_scenario_pref | 1.00 | 1.00 | 0.000 | 0.401 | 1.863 | 0.00 |  | 1.808 | 1.888 |
+| no_scenario_excitation | 1.00 | 1.00 | 0.000 | 0.387 | 1.863 | 0.00 |  | 1.808 | 1.934 |
+| equal_scenario_bias | 1.00 | 1.00 | 0.000 | 0.387 | 1.863 | 0.00 |  | 1.808 | 1.934 |
+| no_prediction_bias | 1.00 | 1.00 | 0.000 | 0.381 | 1.863 | 0.00 |  | 1.808 | 1.948 |
+| no_prediction_tracking | 1.00 | 1.00 | 0.000 | 0.283 | 1.863 | 0.00 |  | 1.808 | 2.178 |
+| no_world_update | 1.00 | 1.00 | 0.000 | 0.387 | 1.995 | 0.00 |  | 1.956 | 1.934 |
+| no_goal_meta | 1.00 | 1.00 | 6.662 | 0.474 | 1.863 | 0.00 |  | 1.808 | 1.575 |
+| freeze_adapt_path | 1.00 | 1.00 | 0.000 | 0.388 | 1.863 | 0.00 |  | 1.808 | 1.928 |
+
+### REGIME_SHIFT
+| variant | seq_acc | rolling | scen_div | pred_acc | wm_err | d_seq | shift_lat | ext_err | pred_err |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full | 1.00 | 1.00 | 0.000 | 0.382 | 1.863 | 0.00 | 6 | 1.808 | 2.093 |
+| no_scenario_pref | 1.00 | 1.00 | 0.000 | 0.393 | 1.863 | 0.00 | 6 | 1.808 | 2.055 |
+| no_scenario_excitation | 1.00 | 1.00 | 0.000 | 0.382 | 1.863 | 0.00 | 6 | 1.808 | 2.093 |
+| equal_scenario_bias | 1.00 | 1.00 | 0.000 | 0.382 | 1.863 | 0.00 | 6 | 1.808 | 2.093 |
+| no_prediction_bias | 1.00 | 1.00 | 0.000 | 0.380 | 1.863 | 0.00 | 6 | 1.808 | 2.073 |
+| no_prediction_tracking | 1.00 | 1.00 | 0.009 | 0.287 | 1.863 | 0.00 | 6 | 1.808 | 2.136 |
+| no_world_update | 1.00 | 1.00 | 0.000 | 0.382 | 1.995 | 0.00 | 6 | 1.956 | 2.093 |
+| no_goal_meta | 1.00 | 1.00 | 3.755 | 0.458 | 1.863 | 0.00 | 5 | 1.808 | 1.764 |
+| freeze_adapt_path | 1.00 | 1.00 | 0.000 | 0.382 | 1.863 | 0.00 | 6 | 1.808 | 2.087 |
+
+## Phase-proxy comparison (no historical Phase 3/6 binaries in repo)
+**stripped_789**: Phase 7–9 control/scenario/world/consequence gains zeroed (clusters/tissues still computed).
+**full** = FAST defaults (Phase 9 full).
+
+| proxy | task | seq_acc | instab | clusters | tissues | hier |
+| --- | --- | --- | --- | --- | --- | --- |
+| stripped_789 | MOVING_TARGET | 0.71 | 0.002 | 3 | 2 | 1.167 |
+| stripped_789 | OBSTACLE_NAV | 1.00 | 0.020 | 7 | 6 | 1.154 |
+| stripped_789 | CONTEXT_SWITCH | 1.00 | 0.002 | 3 | 2 | 1.167 |
+| stripped_789 | A_THEN_B | 1.00 | 0.003 | 4 | 3 | 1.167 |
+| stripped_789 | B_THEN_A | 1.00 | 0.003 | 4 | 3 | 1.167 |
+| stripped_789 | EXPLORE_EXPLOIT | 1.00 | 0.002 | 2 | 1 | 1.167 |
+| stripped_789 | DELAYED_TRAP | 1.00 | 0.001 | 2 | 1 | 1.167 |
+| stripped_789 | REGIME_SHIFT | 1.00 | 0.001 | 3 | 2 | 1.167 |
+| full | MOVING_TARGET | 0.71 | 0.000 | 8 | 3 | 1.164 |
+| full | OBSTACLE_NAV | 1.00 | 0.045 | 4 | 1 | 1.155 |
+| full | CONTEXT_SWITCH | 1.00 | 0.001 | 8 | 2 | 1.164 |
+| full | A_THEN_B | 1.00 | 0.011 | 5 | 2 | 1.167 |
+| full | B_THEN_A | 1.00 | 0.011 | 5 | 2 | 1.167 |
+| full | EXPLORE_EXPLOIT | 0.86 | 0.000 | 6 | 1 | 1.164 |
+| full | DELAYED_TRAP | 1.00 | 0.013 | 5 | 2 | 1.167 |
+| full | REGIME_SHIFT | 1.00 | 0.011 | 6 | 3 | 1.167 |

@@ -8,6 +8,7 @@ control — deterministic, fully local, single-file, tkinter.
 
 from __future__ import annotations
 
+import math
 import time
 import tkinter as tk
 from collections import Counter, defaultdict, deque
@@ -26,8 +27,9 @@ def clamp(x: float, lo: float, hi: float) -> float:
 class WorldParams:
     width: int = 50
     height: int = 50
-    diffusion_coeff: float = 0.14
-    decay_coeff: float = 0.990
+    diffusion_coeff: float = 0.30
+    decay_coeff: float = 0.992
+    eastward_transport: float = 0.048
     epsilon: float = 1e-6
     memory_decay: float = 0.97
     memory_gain: float = 0.10
@@ -49,7 +51,7 @@ class WorldParams:
     output_sensitivity: float = 1.00
     signal_cap: float = 50.0
     center_pulse_value: float = 10.0
-    injection_value: float = 1.0
+    injection_value: float = 1.22
     scale_factor: float = 10.0
     cluster_threshold: float = 0.76
     cluster_score_decay: float = 0.985
@@ -59,6 +61,7 @@ class WorldParams:
     output_zone_width: int = 4
     output_weight: float = 1.5
     decision_margin: float = 0.20
+    routing_relative_margin: float = 0.008
     output_center_band: float = 0.22
     adaptation_decay: float = 0.995
     adaptation_gain: float = 0.038
@@ -102,7 +105,7 @@ class WorldParams:
     gate_imbalance_threshold: float = 0.17
     memory_role_wt_threshold: float = 1.75
     memory_role_mem_threshold: float = 1.08
-    episode_steps: int = 55
+    episode_steps: int = 88
     rest_steps: int = 14
     rest_eligibility_decay: float = 0.88
     seq_phase1_steps: int = 40
@@ -137,6 +140,7 @@ class WorldParams:
     model_confidence_gain: float = 0.08
     model_confidence_cap: float = 1.0
     prediction_bias: float = 0.06
+    prediction_track_signal: float = 0.14
     prediction_error_adapt_scale: float = 0.032
     pred_path_damp_scale: float = 0.02
     high_confidence_threshold: float = 0.55
@@ -144,6 +148,8 @@ class WorldParams:
     scenario_a_bias: float = 1.012
     scenario_b_bias: float = 0.988
     scenario_pref_scale: float = 0.07
+    scenario_inject_coupling: float = 0.45
+    scenario_from_signal_gain: float = 0.016
     world_state_decay: float = 0.96
     world_state_gain: float = 0.08
     world_state_corr: float = 0.06
@@ -217,6 +223,8 @@ class Phase9World:
     TASK_OBSTACLE_NAV = "OBSTACLE_NAV"
     TASK_CONTEXT_SWITCH = "CONTEXT_SWITCH"
     TASK_EXPLORE_EXPLOIT = "EXPLORE_EXPLOIT"
+    TASK_DELAYED_TRAP = "DELAYED_TRAP"
+    TASK_REGIME_SHIFT = "REGIME_SHIFT"
 
     RUN_FREE = "FREE_RUN"
     RUN_TRAINING = "TRAINING"
@@ -259,6 +267,9 @@ class Phase9World:
         self.seq_step = 0
         self._seq_gap_len = 0
         self.delay_match_first_is_a = True
+        self._trap_prefer_top = True
+        self._last_episode_decision_top: bool | None = None
+        self._regime_prefer_top = True
 
         self.cluster_sizes: dict[int, int] = {}
         self.cluster_dominant_role: dict[int, int] = {}
@@ -400,6 +411,9 @@ class Phase9World:
             self._episode_path_signatures.clear()
             self.strategy_variation_score = 0.0
             self.recovery_time_after_disturbance = 0.0
+            self._trap_prefer_top = True
+            self._last_episode_decision_top = None
+            self._regime_prefer_top = True
         self._set_seq_gap_for_task()
         self._post_step_analysis()
 
@@ -412,6 +426,12 @@ class Phase9World:
             self.TASK_INTERRUPTED_SIGNAL,
         ):
             self._seq_gap_len = self.p.seq_gap_long
+        elif self.current_task in (
+            self.TASK_MOVING_TARGET,
+            self.TASK_CONTEXT_SWITCH,
+            self.TASK_EXPLORE_EXPLOIT,
+        ):
+            self._seq_gap_len = 3
         else:
             self._seq_gap_len = self.p.seq_gap_steps
 
@@ -441,16 +461,109 @@ class Phase9World:
         if self.p.width < 2:
             return
         v = self.p.injection_value
-        for y in range(self.p.height):
-            self.grid_current[y][1].signal += v
+        w, h = self.p.width, self.p.height
+        spread = max(1, min(w - 2, max(6, (2 * w) // 5)))
+        for xi in range(spread):
+            xinj = 1 + xi
+            if xinj >= w:
+                break
+            fade = math.exp(-0.22 * xi)
+            add = v * fade
+            for y in range(h):
+                self.grid_current[y][xinj].signal += add
+                self._couple_scenario_channels_at(y, xinj, add, "stream")
 
     def inject_input_a(self) -> None:
         if self.p.width < 2:
             return
         v = self.p.injection_value
-        y_max = max(1, self.p.height // 3)
-        for y in range(0, y_max):
-            self.grid_current[y][1].signal += v
+        w, h = self.p.width, self.p.height
+        y_max = max(1, h // 3)
+        oz = max(1, min(self.p.output_zone_width, w))
+        spread = max(1, min(w - 2, w - oz - 1))
+        for xi in range(spread):
+            xinj = 1 + xi
+            if xinj >= w:
+                break
+            fade = math.exp(-0.09 * xi)
+            for y in range(0, y_max):
+                add = v * fade * 1.45
+                self.grid_current[y][xinj].signal += add
+                self._couple_scenario_channels_at(y, xinj, add, "A")
+
+    def inject_input_b(self) -> None:
+        if self.p.width < 2:
+            return
+        v = self.p.injection_value
+        w, h = self.p.width, self.p.height
+        y_min = (2 * h) // 3
+        oz = max(1, min(self.p.output_zone_width, w))
+        spread = max(1, min(w - 2, w - oz - 1))
+        for xi in range(spread):
+            xinj = 1 + xi
+            if xinj >= w:
+                break
+            fade = math.exp(-0.09 * xi)
+            for y in range(y_min, h):
+                add = v * fade * 1.45
+                self.grid_current[y][xinj].signal += add
+                self._couple_scenario_channels_at(y, xinj, add, "B")
+
+    def inject_sequential_column_a(self, gain: float = 1.0) -> None:
+        """Full-height multi-column drive for sequential tasks (reaches output on wide grids)."""
+        w, h = self.p.width, self.p.height
+        if w < 2:
+            return
+        v = self.p.injection_value * gain
+        oz = max(1, min(self.p.output_zone_width, w))
+        spread = max(1, min(w - 2, w - oz - 1))
+        for xi in range(spread):
+            xinj = 1 + xi
+            if xinj >= w:
+                break
+            fade = math.exp(-0.065 * xi)
+            for y in range(h):
+                t = (h - 1 - y) / max(h - 1, 1)
+                add = v * fade * (0.38 + 0.62 * t)
+                self.grid_current[y][xinj].signal += add
+                self._couple_scenario_channels_at(y, xinj, add, "A")
+
+    def inject_sequential_column_b(self, gain: float = 1.0) -> None:
+        w, h = self.p.width, self.p.height
+        if w < 2:
+            return
+        v = self.p.injection_value * gain
+        oz = max(1, min(self.p.output_zone_width, w))
+        spread = max(1, min(w - 2, w - oz - 1))
+        for xi in range(spread):
+            xinj = 1 + xi
+            if xinj >= w:
+                break
+            fade = math.exp(-0.065 * xi)
+            for y in range(h):
+                t = y / max(h - 1, 1)
+                add = v * fade * (0.38 + 0.62 * t)
+                self.grid_current[y][xinj].signal += add
+                self._couple_scenario_channels_at(y, xinj, add, "B")
+
+    def _couple_scenario_channels_at(self, y: int, x: int, energy: float, kind: str) -> None:
+        """Excite counterfactual channels at deterministic injection sites (energy ≈ local signal added)."""
+        if energy <= 0.0:
+            return
+        cap = self.p.signal_cap
+        c = self.grid_current[y][x]
+        k = self.p.scenario_inject_coupling * energy / max(self.p.injection_value, 1e-6)
+        if kind == "A":
+            c.scenario_a_signal = clamp(c.scenario_a_signal + k * 1.22, -cap, cap)
+            c.scenario_b_signal = clamp(c.scenario_b_signal + k * 0.78, -cap, cap)
+        elif kind == "B":
+            c.scenario_a_signal = clamp(c.scenario_a_signal + k * 0.78, -cap, cap)
+            c.scenario_b_signal = clamp(c.scenario_b_signal + k * 1.22, -cap, cap)
+        else:
+            h = self.p.height
+            wy = y / max(h - 1, 1)
+            c.scenario_a_signal = clamp(c.scenario_a_signal + k * (0.52 + 0.48 * (1.0 - wy)), -cap, cap)
+            c.scenario_b_signal = clamp(c.scenario_b_signal + k * (0.52 + 0.48 * wy), -cap, cap)
 
     def _apply_disturbance_perturbation(self) -> None:
         if self.mode != self.TASK_DISTURBANCE:
@@ -464,19 +577,15 @@ class Phase9World:
             for x in range(w):
                 if (x + y + self.step_count) % 9 == 0:
                     sgn = 1.0 if (x + y) % 2 == 0 else -1.0
-                    self.grid_current[y][x].signal += amp * sgn
-
-    def inject_input_b(self) -> None:
-        if self.p.width < 2:
-            return
-        v = self.p.injection_value
-        y_min = (2 * self.p.height) // 3
-        for y in range(y_min, self.p.height):
-            self.grid_current[y][1].signal += v
+                    add = amp * sgn
+                    self.grid_current[y][x].signal += add
+                    self._couple_scenario_channels_at(y, x, abs(add), "stream")
 
     def inject_at(self, x: int, y: int, amount: float | None = None) -> None:
         if 0 <= x < self.p.width and 0 <= y < self.p.height:
-            self.grid_current[y][x].signal += self.p.injection_value if amount is None else amount
+            add = self.p.injection_value if amount is None else amount
+            self.grid_current[y][x].signal += add
+            self._couple_scenario_channels_at(y, x, abs(add), "stream")
 
     def _inject_interrupt_noise(self) -> None:
         w, h = self.p.width, self.p.height
@@ -487,7 +596,9 @@ class Phase9World:
             for x in range(1, min(5, w)):
                 if (x + y + self.step_count) % 3 != 0:
                     sgn = 1.0 if (x + y + self.step_count) % 2 == 0 else -1.0
-                    self.grid_current[y][x].signal += 0.45 * v * sgn
+                    add = 0.45 * v * sgn
+                    self.grid_current[y][x].signal += add
+                    self._couple_scenario_channels_at(y, x, abs(add), "stream")
 
     def _inject_phase8_noise(self, amp: float) -> None:
         w, h = self.p.width, self.p.height
@@ -497,15 +608,21 @@ class Phase9World:
         for y in range(h):
             for x in range(1, min(6, w)):
                 q = ((x * 13 + y * 7 + self.step_count * 11) % 7) - 3
-                self.grid_current[y][x].signal += amp * v * q * 0.2
+                add = amp * v * q * 0.2
+                self.grid_current[y][x].signal += add
+                self._couple_scenario_channels_at(y, x, abs(add), "stream")
 
     def _sequential_inject(self) -> None:
         t = self.current_task
         if t == self.TASK_DELAY_MATCH:
             if self.seq_phase == 0:
-                (self.inject_input_a if self.delay_match_first_is_a else self.inject_input_b)()
+                (
+                    self.inject_sequential_column_a if self.delay_match_first_is_a else self.inject_sequential_column_b
+                )()
             elif self.seq_phase == 2:
-                (self.inject_input_a if self.delay_match_first_is_a else self.inject_input_b)()
+                (
+                    self.inject_sequential_column_a if self.delay_match_first_is_a else self.inject_sequential_column_b
+                )()
             return
         if t == self.TASK_COMPETING:
             if self.seq_phase != 1:
@@ -525,32 +642,140 @@ class Phase9World:
                 self.inject_input_a()
                 self._inject_phase8_noise(0.22)
             return
+        if t == self.TASK_MOVING_TARGET:
+            if self.seq_phase == 0:
+                self.inject_sequential_column_a(0.48)
+            elif self.seq_phase == 2:
+                h, w = self.p.height, self.p.width
+                ty = self.env_moving_target_y()
+                if ty < h // 2:
+                    for yy in range(h // 2, h):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_a(1.52)
+                else:
+                    for yy in range(0, h // 2):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_b(1.52)
+            return
+        if t == self.TASK_OBSTACLE_NAV:
+            if self.seq_phase in (0, 2):
+                h, w = self.p.height, self.p.width
+                for yy in range(h // 2, h):
+                    for xx in range(w):
+                        self.grid_current[yy][xx].signal *= 0.35
+                self.inject_sequential_column_a(1.38)
+            return
+        if t == self.TASK_CONTEXT_SWITCH:
+            h, w = self.p.height, self.p.width
+            if self.seq_phase == 0:
+                self.inject_sequential_column_a(0.55)
+            elif self.seq_phase == 2:
+                prefer = self.env_prefer_top()
+                if prefer:
+                    for yy in range(h // 2, h):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_a(1.45)
+                else:
+                    for yy in range(0, h // 2):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_b(1.45)
+            return
+        if t == self.TASK_DELAYED_TRAP:
+            h, w = self.p.height, self.p.width
+            if self.seq_phase == 0:
+                # Ambiguous priming; both channels injected.
+                self.inject_sequential_column_a(0.42)
+                self.inject_sequential_column_b(0.42)
+            elif self.seq_phase == 2:
+                prefer = self.env_prefer_top()
+                if prefer:
+                    for yy in range(h // 2, h):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_a(1.45)
+                else:
+                    for yy in range(0, h // 2):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_b(1.45)
+            return
+        if t == self.TASK_REGIME_SHIFT:
+            h, w = self.p.height, self.p.width
+            if self.seq_phase == 0:
+                self.inject_sequential_column_a(0.55)
+            elif self.seq_phase == 2:
+                prefer = self.env_prefer_top(max(0, self.step_count - 1))
+                if prefer:
+                    for yy in range(h // 2, h):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_a(1.45)
+                else:
+                    for yy in range(0, h // 2):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_b(1.45)
+            return
+        if t == self.TASK_EXPLORE_EXPLOIT:
+            h, w = self.p.height, self.p.width
+            if self.seq_phase == 0:
+                self.inject_sequential_column_a(0.55)
+            elif self.seq_phase == 2:
+                explore = (self.step_count // 30) % 2 == 0
+                if explore:
+                    for yy in range(h // 2, h):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_a(1.45)
+                else:
+                    for yy in range(0, h // 2):
+                        for xx in range(w):
+                            self.grid_current[yy][xx].signal *= 0.28
+                    self.inject_sequential_column_b(1.45)
+            return
+        if t in (self.TASK_A_THEN_B, self.TASK_A_GAP_B, self.TASK_COND_ROUTE):
+            h, w = self.p.height, self.p.width
+            if self.seq_phase == 0:
+                self.inject_sequential_column_a(0.55)
+            elif self.seq_phase == 2:
+                for yy in range(h // 2, h):
+                    for xx in range(w):
+                        self.grid_current[yy][xx].signal *= 0.28
+                self.inject_sequential_column_a(1.45)
+            return
+        if t in (self.TASK_B_THEN_A, self.TASK_B_GAP_A):
+            h, w = self.p.height, self.p.width
+            if self.seq_phase == 0:
+                self.inject_sequential_column_b(0.55)
+            elif self.seq_phase == 2:
+                for yy in range(0, h // 2):
+                    for xx in range(w):
+                        self.grid_current[yy][xx].signal *= 0.28
+                self.inject_sequential_column_b(1.45)
+            return
         phase_a = (
-            self.TASK_A_THEN_B,
-            self.TASK_A_GAP_B,
-            self.TASK_COND_ROUTE,
             self.TASK_MULTI_PATH,
             self.TASK_ADAPTIVE,
             self.TASK_DISTURBANCE,
             self.TASK_DELAYED_RESPONSE,
             self.TASK_PATTERN_CONTINUATION,
-            self.TASK_MOVING_TARGET,
-            self.TASK_OBSTACLE_NAV,
-            self.TASK_CONTEXT_SWITCH,
-            self.TASK_EXPLORE_EXPLOIT,
         )
         if self.seq_phase == 0:
             if t in phase_a:
-                self.inject_input_a()
+                self.inject_sequential_column_a()
             else:
-                self.inject_input_b()
+                self.inject_sequential_column_b()
         elif self.seq_phase == 1:
             pass
         else:
             if t in phase_a:
-                self.inject_input_b()
+                self.inject_sequential_column_b()
             else:
-                self.inject_input_a()
+                self.inject_sequential_column_a()
 
     def _injection_free(self) -> None:
         m = self.mode
@@ -584,6 +809,8 @@ class Phase9World:
             self.TASK_OBSTACLE_NAV,
             self.TASK_CONTEXT_SWITCH,
             self.TASK_EXPLORE_EXPLOIT,
+            self.TASK_DELAYED_TRAP,
+            self.TASK_REGIME_SHIFT,
         )
         if self.mode in seq_modes:
             self._sequential_inject()
@@ -645,8 +872,18 @@ class Phase9World:
         obs = 1.0 if abs(x - int(cx)) <= 2 and y > h // 5 else 0.0
         return clamp(base * (1.0 - 0.42 * obs), 0.0, 1.0)
 
-    def env_prefer_top(self) -> bool:
-        return (self.step_count // max(1, self.p.env_context_period)) % 2 == 0
+    def env_prefer_top(self, step_count: int | None = None) -> bool:
+        s = self.step_count if step_count is None else step_count
+        if self.current_task == self.TASK_DELAYED_TRAP:
+            return self._trap_prefer_top
+        if self.current_task == self.TASK_REGIME_SHIFT:
+            # Deterministic within-episode regime shift during phase 2.
+            # Use seq_step (phase-local), so a shift occurs even on small grids.
+            if self.seq_phase == 2:
+                shift_at = max(1, self.p.seq_phase2_steps // 2)
+                return self.seq_step < shift_at
+            return True
+        return (s // max(1, self.p.env_context_period)) % 2 == 0
 
     def _evolve_channel_value(
         self,
@@ -829,7 +1066,8 @@ class Phase9World:
                 right = row_cur[x + 1].signal if x < w - 1 else cs
 
                 neighbor_avg = (up + down + left + right) / 4.0
-                new_signal = (cs + d * (neighbor_avg - cs)) * decay
+                east = self.p.eastward_transport
+                new_signal = (cs + d * (neighbor_avg - cs) + east * (right - left)) * decay
                 pw_cl = clamp(pw, self.p.path_weight_min, pw_max)
                 cross_flux = self._cross_cluster_flux(x, y, cur)
                 cross_flux_pred = self._cross_cluster_flux_pred(x, y, cur)
@@ -861,6 +1099,8 @@ class Phase9World:
                     ba_cap,
                     eps,
                 )
+                pt = self.p.prediction_track_signal
+                vp = vp * (1.0 - pt) + cs * pt
                 vp = clamp(vp * gmod, -sig_cap, sig_cap)
 
                 sa_sig = c.scenario_a_signal
@@ -923,6 +1163,9 @@ class Phase9World:
                     self.p.scenario_b_bias,
                 )
                 vb = clamp(vb * gmod, -sig_cap, sig_cap)
+                sk = self.p.scenario_from_signal_gain
+                va = clamp(va + sk * cs * self.p.scenario_a_bias, -sig_cap, sig_cap)
+                vb = clamp(vb + sk * cs * self.p.scenario_b_bias, -sig_cap, sig_cap)
                 var_a = ((sa_sig - up_sa) ** 2 + (sa_sig - down_sa) ** 2 + (sa_sig - left_sa) ** 2 + (sa_sig - right_sa) ** 2) * 0.25
                 var_b = ((sb_sig - up_sb) ** 2 + (sb_sig - down_sb) ** 2 + (sb_sig - left_sb) ** 2 + (sb_sig - right_sb) ** 2) * 0.25
                 norm_va = clamp(var_a / (sig_cap * sig_cap + 1e-6), 0.0, 2.0)
@@ -1249,49 +1492,72 @@ class Phase9World:
             self.correct_episodes += 1
         self.routing_bias_score += reward
 
+    def _routing_edge(self, top: float, bot: float) -> float:
+        tot = abs(top) + abs(bot) + 1e-9
+        return (top - bot) / tot
+
     def _reward_episode(self) -> float:
         top, bot = self.output_top_value, self.output_bottom_value
         ctx = self.output_context_value
         m = self.p.decision_margin
+        rm = self.p.routing_relative_margin
         t = self.current_task
         h = self.p.height
-        if t == self.TASK_MOVING_TARGET:
-            ty = self.env_moving_target_y()
-            want_top = ty < h // 2
-            if want_top:
-                if top > bot + m:
-                    return 1.0
+        edge = self._routing_edge(top, bot)
+
+        def route_reward(want_top: bool) -> float:
+            """Prefer absolute margin when readouts are small; use relative edge when totals are large."""
+            tot = abs(top) + abs(bot)
+            if tot < 1e-6:
+                return 0.0
+            if tot < 3.0:
+                if want_top:
+                    if top > bot + m:
+                        return 1.0
+                    if bot > top + m:
+                        return -1.0
+                    return 0.0
                 if bot > top + m:
+                    return 1.0
+                if top > bot + m:
                     return -1.0
                 return 0.0
-            if bot > top + m:
+            if want_top:
+                if edge > rm:
+                    return 1.0
+                if edge < -rm:
+                    return -1.0
+                return 0.0
+            if edge < -rm:
                 return 1.0
-            if top > bot + m:
+            if edge > rm:
                 return -1.0
             return 0.0
+
+        if t == self.TASK_MOVING_TARGET:
+            # Align with _apply_injection (runs before step_count increments this step).
+            sc = max(0, self.step_count - 1)
+            ty = int((sc * self.p.env_target_velocity) % max(h, 1))
+            want_top = ty < h // 2
+            return route_reward(want_top)
         if t == self.TASK_OBSTACLE_NAV:
-            if top > bot + m:
+            me = max(m, 0.00032 * (abs(top) + abs(bot)))
+            if top > bot + me:
                 return 1.0
-            if bot > top + m:
+            if bot > top + me:
                 return -1.0
             return 0.0
         if t == self.TASK_CONTEXT_SWITCH:
-            if self.env_prefer_top():
-                if top > bot + m:
-                    return 1.0
-                if bot > top + m:
-                    return -1.0
-                return 0.0
-            if bot > top + m:
-                return 1.0
-            if top > bot + m:
-                return -1.0
-            return 0.0
+            return route_reward(self.env_prefer_top(max(0, self.step_count - 1)))
+        if t == self.TASK_DELAYED_TRAP:
+            return route_reward(self.env_prefer_top(max(0, self.step_count - 1)))
+        if t == self.TASK_REGIME_SHIFT:
+            # Evaluate using the current (possibly shifted) regime.
+            return route_reward(self.env_prefer_top(max(0, self.step_count - 1)))
         if t == self.TASK_EXPLORE_EXPLOIT:
-            explore = (self.step_count // 30) % 2 == 0
-            if explore:
-                return 1.0 if top > bot + m else (-1.0 if bot > top + m else 0.0)
-            return 1.0 if bot > top + m else (-1.0 if top > bot + m else 0.0)
+            sc = max(0, self.step_count - 1)
+            explore = (sc // 30) % 2 == 0
+            return route_reward(explore)
         if t == self.TASK_MULTI_PATH:
             if max(abs(top), abs(bot)) < 0.5:
                 return 0.0
@@ -1328,15 +1594,17 @@ class Phase9World:
                 return 0.0
             return 1.0 if self.current_decision in ("TOP", "BOTTOM") else 0.0
         if t in (self.TASK_A_THEN_B, self.TASK_A_GAP_B, self.TASK_COND_ROUTE):
-            if top > bot + m:
+            me = max(m, 0.00032 * (abs(top) + abs(bot)))
+            if top > bot + me:
                 return 1.0
-            if bot > top + m:
+            if bot > top + me:
                 return -1.0
             return 0.0
         if t in (self.TASK_B_THEN_A, self.TASK_B_GAP_A):
-            if bot > top + m:
+            me = max(m, 0.00032 * (abs(top) + abs(bot)))
+            if bot > top + me:
                 return 1.0
-            if top > bot + m:
+            if top > bot + me:
                 return -1.0
             return 0.0
         return 0.0
@@ -1371,6 +1639,12 @@ class Phase9World:
                     self.delay_match_correct += 1
             self.apply_episode_reinforcement(rew)
             self._snapshot_context_probe()
+            if self.current_task == self.TASK_DELAYED_TRAP:
+                # Next episode flips preference based on previous decision (delayed consequence).
+                dec = self.current_decision
+                self._last_episode_decision_top = True if dec == "TOP" else (False if dec == "BOTTOM" else None)
+                if self._last_episode_decision_top is not None:
+                    self._trap_prefer_top = not self._last_episode_decision_top
             sig = (
                 1 if self.path_to_top_exists else 0,
                 1 if self.path_to_bottom_exists else 0,
@@ -1504,6 +1778,8 @@ class Phase9World:
             self.TASK_OBSTACLE_NAV,
             self.TASK_CONTEXT_SWITCH,
             self.TASK_EXPLORE_EXPLOIT,
+            self.TASK_DELAYED_TRAP,
+            self.TASK_REGIME_SHIFT,
         )
         if self.mode in seq_modes:
             self._advance_sequential()
@@ -1570,9 +1846,10 @@ class Phase9World:
     def _output_split_y(self) -> int:
         h = self.p.height
         if self.current_task == self.TASK_MOVING_TARGET:
-            return clamp(self.env_moving_target_y(), 1, h - 2)
+            # Balanced top/bottom bands; _reward_episode still uses ty for which side should win.
+            return h // 2
         if self.current_task == self.TASK_CONTEXT_SWITCH:
-            return h // 4 if self.env_prefer_top() else (3 * h) // 4
+            return h // 2
         return h // 2
 
     def _post_step_analysis(self) -> None:
